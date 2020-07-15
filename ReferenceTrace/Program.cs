@@ -47,12 +47,6 @@ namespace ReferenceTrace
                     Console.Out.WriteLine($"Duplicate package {removePackage} can be removed from {project.FilePath}");
 
             ApplyChanges(removePackages);
-
-            if (Debugger.IsAttached)
-            {
-                Console.WriteLine("Press any key to continue...");
-                Console.ReadKey(true);
-            }
         }
 
         private static void ApplyChanges(Dictionary<Project, HashSet<string>> removePackages)
@@ -123,7 +117,7 @@ namespace ReferenceTrace
                 var nugetRange = nugetReference.Version.ToVersionRange();
                 try
                 {
-                    var matchDir = (new DirectoryInfo(nuspecPath)).GetDirectories().FirstOrDefault(x =>
+                    var matchDir = new DirectoryInfo(nuspecPath).GetDirectories().FirstOrDefault(x =>
                     nugetRange.Satisfies(x.Name.ToNugetVersion()));
                     var nuspecFile = Path.Combine(matchDir?.FullName ?? throw new IOException(), $"{nugetName}.nuspec");
 
@@ -166,7 +160,10 @@ namespace ReferenceTrace
         {
             Console.WriteLine("Loading solution file...");
             var slnFile = new SolutionFile(solutionPath);
-            var allLines = File.ReadAllLines(solutionPath);
+            var allLines = File.ReadAllLines(solutionPath).ToList();
+            while (String.IsNullOrWhiteSpace(allLines.First()))
+                allLines.RemoveAt(0);
+
             var lineQueue = new Queue<string>(allLines);
             slnFile.Load(lineQueue);
             return (slnFile, new Queue<string>(allLines));

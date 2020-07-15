@@ -114,8 +114,6 @@ namespace ReferenceTrace
 
         public void Save(Queue<string> sourceLines)
         {
-            // Blank line
-            sourceLines.Enqueue("");
             // format
             sourceLines.Enqueue($"Microsoft Visual Studio Solution File, Format Version {Version}");
             // comment
