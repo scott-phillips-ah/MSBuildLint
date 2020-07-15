@@ -151,6 +151,8 @@ namespace ReferenceTrace.MSProject
 		public string RuntimeIdentifiers { get; set; }
 		[XmlElement(ElementName = "ServerGarbageCollection")]
 		public string ServerGarbageCollection { get; set; }
+        [XmlElement(ElementName = "GenerateDocumentationFile")]
+        public string GenerateDocumentationFile { get; set; }
 		[XmlElement(ElementName = "TargetFramework")]
 		public string TargetFramework { get; set; }
         [XmlElement(ElementName = "IsPackable")]
