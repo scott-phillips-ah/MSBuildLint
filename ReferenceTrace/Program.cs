@@ -5,17 +5,24 @@ using System.IO;
 using System.Linq;
 using System.Xml;
 using System.Xml.Serialization;
-
 using Microsoft.Extensions.Configuration;
-
 using ReferenceTrace.MSProject;
 using ReferenceTrace.NuSpec;
+using ShellProgressBar;
 
 
 namespace ReferenceTrace
 {
     class Program
     {
+        private ProgressBarOptions DefaultOptions => new ProgressBarOptions
+        {
+            ForegroundColor = ConsoleColor.Yellow,
+            ForegroundColorDone = ConsoleColor.DarkGreen,
+            BackgroundColor = ConsoleColor.DarkGray,
+            BackgroundCharacter = '\u2593'
+        };
+
         private static void Main(string[] args)
         {
             Console.WriteLine("Parsing command line...");
@@ -34,17 +41,22 @@ namespace ReferenceTrace
             var missingPackages = new HashSet<string>();
             var removePackages = new Dictionary<Project, HashSet<string>>();
 
-            foreach (var project in solution.Projects)
+            using (var pbar = new ProgressBar(solution.Projects.Count, "Parsing project files"))
             {
-                var allReferencedPackages = new HashSet<string>();
-                var unnecessaryPackages = GetUnnecessaryReferences(project, config, allReferencedPackages, missingPackages);
-                removePackages[project] = unnecessaryPackages;
+                foreach (var project in solution.Projects)
+                {
+                    pbar.Tick();
+                    var allReferencedPackages = new HashSet<string>();
+                    var unnecessaryPackages =
+                        GetUnnecessaryReferences(project, config, allReferencedPackages, missingPackages, pbar);
+                    removePackages[project] = unnecessaryPackages;
+                }
             }
 
             // Print results
             foreach (var project in removePackages.Keys)
-                foreach (var removePackage in removePackages[project])
-                    Console.Out.WriteLine($"Duplicate package {removePackage} can be removed from {project.FilePath}");
+            foreach (var removePackage in removePackages[project])
+                Console.Out.WriteLine($"Duplicate package {removePackage} can be removed from {project.FilePath}");
 
             ApplyChanges(removePackages);
         }
@@ -81,64 +93,73 @@ namespace ReferenceTrace
         }
 
         private static HashSet<string> GetUnnecessaryReferences(Project project, IConfigurationRoot config,
-            HashSet<string> allReferencedPackages, HashSet<string> missingPackages)
+            HashSet<string> allReferencedPackages, HashSet<string> missingPackages, ProgressBarBase pbar)
         {
-            var projectReferences = project.ItemGroup.SelectMany(x => x.ProjectReference);
+            var projectReferences = project.ItemGroup.SelectMany(x => x.ProjectReference).ToList();
             var packageReferences = project.ItemGroup.SelectMany(x => x.PackageReference).ToList();
 
             // Get project references - investigate those
-            foreach (var referencedProject in projectReferences)
+            using (var pbar2 = pbar.Spawn(projectReferences.Count, $"{Path.GetFileName(project.FilePath)}: get unnecessary references"))
             {
-                var newProjectPath =
-                    Path.Combine(Path.GetDirectoryName(project.FilePath) ?? string.Empty, referencedProject.Include);
-                using var inStream = File.OpenRead(newProjectPath);
-                var newProject = (Project)Extensions.ProjectXmlSerializer.Deserialize(inStream);
-                newProject.FilePath = newProjectPath;
+                foreach (var referencedProject in projectReferences)
+                {
+                    pbar2.Tick();
+                    
+                    var newProjectPath =
+                        Path.Combine(Path.GetDirectoryName(project.FilePath) ?? string.Empty,
+                            referencedProject.Include);
+                    using var inStream = File.OpenRead(newProjectPath);
+                    var newProject = (Project) Extensions.ProjectXmlSerializer.Deserialize(inStream);
+                    newProject.FilePath = newProjectPath;
 
-                GetUnnecessaryReferences(newProject, config, allReferencedPackages, missingPackages);
+                    GetUnnecessaryReferences(newProject, config, allReferencedPackages, missingPackages, pbar2);
+                }
             }
 
             // Get nuget reference - investigate those
             AddNugetDependencies(packageReferences, config, allReferencedPackages, missingPackages);
 
-            return packageReferences.Select(x => x.Include.ToLowerInvariant()).Intersect(allReferencedPackages).ToHashSet();
+            return packageReferences.Select(x => x.Include.ToLowerInvariant()).Intersect(allReferencedPackages)
+                .ToHashSet();
         }
 
-        private static void AddNugetDependencies(IEnumerable<PackageReference> packageReferences, IConfigurationRoot config,
+        private static void AddNugetDependencies(IEnumerable<PackageReference> packageReferences,
+            IConfigurationRoot config,
             HashSet<string> allReferencedPackages, HashSet<string> missingPackages)
         {
             foreach (var nugetReference in packageReferences)
             {
                 // Deserialize the nuspec file
                 var nugetName = nugetReference.Include.ToLowerInvariant();
-                var nuspecPath = Path.Combine(config["nugetcache"], nugetName);
-                if (missingPackages.Contains(nuspecPath)) continue;
+                var nuspecPaths = Path.Combine(config["nugetcache"], nugetName).Split(';');
+                if (nuspecPaths.Any(missingPackages.Contains)) continue;
                 // Find a local directory which matches
                 var nugetRange = nugetReference.Version.ToVersionRange();
                 try
                 {
-                    var matchDir = new DirectoryInfo(nuspecPath).GetDirectories().FirstOrDefault(x =>
-                    nugetRange.Satisfies(x.Name.ToNugetVersion()));
+                    var matchDir = nuspecPaths.SelectMany(path => new DirectoryInfo(path).GetDirectories())
+                        .FirstOrDefault(x =>
+                            nugetRange.Satisfies(x.Name.ToNugetVersion()));
                     var nuspecFile = Path.Combine(matchDir?.FullName ?? throw new IOException(), $"{nugetName}.nuspec");
 
 
                     using var nuspecStream = File.OpenRead(nuspecFile);
-                    var xmlReader = new XmlTextReader(nuspecStream);
-                    xmlReader.Namespaces = false;
-                    var nuspecObject = (Package)Extensions.PackageXmlSerializer.Deserialize(xmlReader);
+                    var xmlReader = new XmlTextReader(nuspecStream) {Namespaces = false};
+                    var nuspecObject = (Package) Extensions.PackageXmlSerializer.Deserialize(xmlReader);
 
-                    var dependencies = nuspecObject.Metadata?.Dependencies?.Group?.Select(x => x.Dependency)?.RemoveNulls()
+                    var dependencies = nuspecObject.Metadata?.Dependencies?.Group?.Select(x => x.Dependency)
+                        ?.RemoveNulls()
                         ?.ToList() ?? Array.Empty<Dependency>().ToList();
                     allReferencedPackages.AddRange(dependencies.Select(x => x.Id.ToLowerInvariant()));
                     // Recursive check.
                     AddNugetDependencies(
-                        dependencies.Select(x => new PackageReference() { Include = x.Id, Version = x.Version }), config,
+                        dependencies.Select(x => new PackageReference() {Include = x.Id, Version = x.Version}), config,
                         allReferencedPackages, missingPackages);
                 }
-                catch (IOException ioe)
+                catch (IOException)
                 {
-                    Console.Error.WriteLine($"Could not find nuget file: {nuspecPath}");
-                    missingPackages.Add(nuspecPath);
+                    // Console.Error.WriteLine($"Could not find nuget file in: {nuspecPaths}");
+                    missingPackages.Add(nugetName);
                 }
             }
         }
@@ -152,7 +173,7 @@ namespace ReferenceTrace
                 var actual = outputQueue.Dequeue();
                 // Skip the comments.
                 if (expected.StartsWith("#") && actual.StartsWith("#")) continue;
-                Debug.Assert(expected.Equals(actual), $"Expected `{expected}`\nActual `{actual}`");
+                Debug.Assert(expected.Trim().Equals(actual.Trim()), $"Expected `{expected}`\nActual `{actual}`");
             }
         }
 

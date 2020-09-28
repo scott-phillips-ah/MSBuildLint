@@ -177,6 +177,8 @@ namespace ReferenceTrace.MSProject
         public string LangVersion { get; set; }
         [XmlElement(ElementName = "RootNamespace")]
         public string RootNamespace { get; set; }
+        [XmlElement(ElementName = "UseNETCoreGenerator")]
+        public string UseNETCoreGenerator { get; set; }
     }
     [XmlRoot(ElementName = "ItemsToCopy")]
     public class ItemsToCopy

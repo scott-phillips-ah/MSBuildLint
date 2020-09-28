@@ -2,7 +2,7 @@
   "profiles": {
     "ReferenceTrace": {
       "commandName": "Project",
-      "commandLineArgs": "--solutionfile \"C:\\work\\svc-user\\src\\Earnin.Users.Web.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages\""
+      "commandLineArgs": "--solutionfile \"C:\\work\\svc-express\\src\\Earnin.Express.Web.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
     }
   }
 }

@@ -41,7 +41,9 @@ namespace ReferenceTrace
 
         public static NuGetVersion ToNugetVersion(this string self)
         {
-            return new NuGetVersion(self);
+            if (NuGetVersion.TryParse(self, out var version)) return version;
+            
+            return new NuGetVersion(0,0,0);
         }
 
         public static VersionRange ToVersionRange(this string self)
