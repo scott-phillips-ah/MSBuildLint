@@ -3,9 +3,10 @@
 
  http://www.apache.org/licenses/LICENSE-2.0
  */
-using System;
-using System.Xml.Serialization;
+
 using System.Collections.Generic;
+using System.Xml.Serialization;
+
 namespace ReferenceTrace.MSProject
 {
 	[XmlRoot(ElementName = "Compile")]

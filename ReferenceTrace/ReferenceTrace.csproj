@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="LazyCache" Version="2.1.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="3.1.5" />
     <PackageReference Include="NuGet.Versioning" Version="5.6.0" />
     <PackageReference Include="ShellProgressBar" Version="5.0.0" />

@@ -3,136 +3,53 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-
 using ReferenceTrace.MSProject;
 
 namespace ReferenceTrace
 {
-    interface IFileLoadSave
+    internal class SolutionFile
     {
-        public void Load(Queue<string> sourceLines);
-        public void Save(Queue<string> sourceLines);
-    }
-    class SolutionFile : IFileLoadSave
-    {
-        public string SolutionPath { get; set; }
+        private string SolutionPath { get; set; }
 
-        public string Version { get; set; }
-        public string VisualStudioVersion { get; set; }
-        public string MinimumVisualStudioVersion { get; set; }
+        private readonly Lazy<List<SolutionProject>> _solutionProjects;
+        private IEnumerable<SolutionProject> SolutionProjects => _solutionProjects.Value;
 
-        public List<SolutionProject> SolutionProjects { get; set; } = new List<SolutionProject>();
-        public List<GlobalSection> GlobalSections { get; set; } = new List<GlobalSection>();
+        private readonly Lazy<List<Project>> _projects;
+        public List<Project> Projects => _projects.Value;
 
-        private List<Project> _projects;
-        public List<Project> Projects
+        private Lazy<List<string>> Lines => new Lazy<List<string>>(() => File.ReadAllLines(SolutionPath).ToList());
+        
+        public SolutionFile()
         {
-            get
+            _solutionProjects = new Lazy<List<SolutionProject>>(() => LoadSolutionProjects().ToList());
+            _projects = new Lazy<List<Project>>(() => LoadProjects().ToList());
+        }
+
+        public SolutionFile(string path) : this()
+        {
+            SolutionPath = path;
+        }
+
+        private IEnumerable<SolutionProject> LoadSolutionProjects()
+        {
+            return Lines.Value.Where(line => line.StartsWith("Project")).Select(line => new SolutionProject(line));
+        }
+        private IEnumerable<Project> LoadProjects()
+        {
+            foreach (var solutionProject in SolutionProjects)
             {
-                if (_projects == null)
-                {
-                    _projects = new List<Project>();
-                    foreach (var solutionProject in SolutionProjects)
-                    {
-                        if (solutionProject.Path.EndsWith(".csproj"))
-                        {
-                            // Load the actual project instances.
-                            var projPath =
-                                Path.Combine(Path.GetDirectoryName(this.SolutionPath) ?? "", solutionProject.Path);
-                            using var projectStream = File.OpenRead(projPath);
-                            var newProject = (Project) Extensions.ProjectXmlSerializer.Deserialize(projectStream);
-                            newProject.FilePath = projPath;
-                            _projects.Add(newProject);
-                        }
-                    }
-                }
-
-                return _projects;
+                if (!solutionProject.Path.EndsWith(".csproj")) continue;
+                // Load the actual project instances.
+                var projPath =
+                    Path.Combine(Path.GetDirectoryName(SolutionPath) ?? "", solutionProject.Path);
+                var newProject = Extensions.ProjectXmlSerializer.Deserialize<Project>(projPath);
+                newProject.FilePath = projPath;
+                yield return newProject;
             }
-        }
-
-        public SolutionFile(string path = null)
-        {
-            this.SolutionPath = path;
-        }
-
-        // Regex patterns
-        private const string VersionPattern = @"Version (?<version>\d*\.\d*)";
-
-        public void Load(Queue<string> sourceLines)
-        {
-            // Parse line by line
-            while (sourceLines.Count > 0)
-            {
-                string slnLine = sourceLines.Peek()?.Trim();
-                if (String.IsNullOrWhiteSpace(slnLine) || slnLine.StartsWith("# ")) goto removeLine;
-
-                if (slnLine.StartsWith("Microsoft Visual Studio Solution File"))
-                {
-                    // Parse the version information.
-                    var match = Regex.Matches(slnLine, VersionPattern).First();
-                    this.Version = match.Groups["version"].Value;
-                }
-
-                if (slnLine.StartsWith("VisualStudioVersion"))
-                {
-                    this.VisualStudioVersion =
-                        slnLine.Substring(slnLine.IndexOf("=", StringComparison.Ordinal) + 1).Trim();
-                }
-
-                if (slnLine.StartsWith("MinimumVisualStudioVersion"))
-                {
-                    this.MinimumVisualStudioVersion =
-                        slnLine.Substring(slnLine.IndexOf("=", StringComparison.Ordinal) + 1).Trim();
-                }
-
-                if ("Global".Equals(slnLine))
-                {
-                    // Find the entire section.
-                    sourceLines.Dequeue(); // Dump the opening header
-                    while (!"EndGlobal".Equals(sourceLines.Peek()?.Trim()))
-                    {
-                        var newSection = new GlobalSection();
-                        newSection.Load(sourceLines);
-                        GlobalSections.Add(newSection);
-                    }
-                }
-
-                if (slnLine.StartsWith("Project"))
-                {
-                    // Parse a project
-                    var newProject = new SolutionProject();
-                    newProject.Load(sourceLines);
-                    SolutionProjects.Add(newProject);
-                }
-                // ReSharper disable once BadControlBracesIndent
-            removeLine:
-                // Remove the next line.
-                sourceLines.Dequeue();
-            }
-        }
-
-        public void Save(Queue<string> sourceLines)
-        {
-            // format
-            sourceLines.Enqueue($"Microsoft Visual Studio Solution File, Format Version {Version}");
-            // comment
-            sourceLines.Enqueue($"# Visual Studio Version {VisualStudioVersion.Substring(0,VisualStudioVersion.IndexOf(".", StringComparison.Ordinal))}");
-            // version information
-            sourceLines.Enqueue($"VisualStudioVersion = {VisualStudioVersion}");
-            sourceLines.Enqueue($"MinimumVisualStudioVersion = {MinimumVisualStudioVersion}");
-            // projects
-            foreach (var project in SolutionProjects)
-                project.Save(sourceLines);
-            // global sections
-            sourceLines.Enqueue("Global");
-            foreach (var section in GlobalSections)
-                section.Save(sourceLines);
-            sourceLines.Enqueue("EndGlobal");
         }
     }
 
-    class GlobalSection : IFileLoadSave
+    class GlobalSection
     {
         public GlobalSectionType Type { get; set; }
         public SolutionLocation Location { get; set; }
@@ -147,8 +64,8 @@ namespace ReferenceTrace
         {
             var headerLine = sourceLines.Dequeue()?.Trim();
             var headerMatch = Regex.Matches(headerLine, HeaderPattern).First();
-            this.Type = Enum.Parse<GlobalSectionType>(headerMatch.Groups["type"].Value);
-            this.Location = Enum.Parse<SolutionLocation>(headerMatch.Groups["location"].Value);
+            Type = Enum.Parse<GlobalSectionType>(headerMatch.Groups["type"].Value);
+            Location = Enum.Parse<SolutionLocation>(headerMatch.Groups["location"].Value);
 
             string assignmentLine;
             while (!"EndGlobalSection".Equals(assignmentLine = sourceLines.Dequeue()?.Trim()))
@@ -170,7 +87,7 @@ namespace ReferenceTrace
             foreach (var assignment in ConfigurationPairs)
                 sourceLines.Enqueue($"\t\t{assignment.Value} = {assignment.Key}");
             // Footer
-            sourceLines.Enqueue($"\tEndGlobalSection");
+            sourceLines.Enqueue("\tEndGlobalSection");
         }
     }
 
@@ -186,7 +103,7 @@ namespace ReferenceTrace
         public static ConfigurationPlatform Parse(string source)
         {
             var match = Regex.Matches(source, ConfigurationPattern).First();
-            var platform = new ConfigurationPlatform()
+            var platform = new ConfigurationPlatform
             {
                 Configuration = match.Groups["configuration"].Value,
                 Platform = match.Groups["platform"].Value,
@@ -207,84 +124,28 @@ namespace ReferenceTrace
         }
     }
 
-    class SolutionProject : IFileLoadSave
+    class SolutionProject
     {
         public Guid ProjectGuid { get; set; } = Guid.Empty;
         public string Name { get; set; } = "";
         public string Path { get; set; } = "";
         public Guid ParentGuid { get; set; } = Guid.Empty;
-        public List<ProjectSection> Sections { get; set; } = new List<ProjectSection>();
 
         private const string ProjectHeaderPattern =
-            @"Project\(\""{(?<parentguid>[A-F0-9\-]+)}\""\)\s*=\s*\""(?<projectname>[\.\w]+)\""\s*,\s*\""(?<projectpath>[\w\.\\\/]+)\""\s*,\s*\""(?<projectguid>{[A-F0-9\-]+})\""";
+            @"Project\(\""{(?<parentguid>[A-F0-9\-]+)}\""\)\s*=\s*\""(?<projectname>\S+)\""\s*,\s*\""(?<projectpath>\S+)\""\s*,\s*\""(?<projectguid>{[A-F0-9\-]+})\""";
 
-        public void Load(Queue<string> sourceLineQueue)
+        public SolutionProject(string headerLine) { Load(headerLine);}
+
+        public void Load(string headerLine)
         {
-            string headerLine = sourceLineQueue.Dequeue()?.Trim();
-            var match = Regex.Matches(headerLine, ProjectHeaderPattern).First();
-            this.ProjectGuid = Guid.Parse(match.Groups["projectguid"].Value);
-            this.Name = match.Groups["projectname"].Value;
-            this.Path = match.Groups["projectpath"].Value;
-            this.ParentGuid = Guid.Parse(match.Groups["parentguid"].Value);
-
-            while (!"EndProject".Equals(sourceLineQueue.Peek()?.Trim()))
-            {
-                // Consume the internals
-                var newSection = new ProjectSection();
-                newSection.Load(sourceLineQueue);
-                this.Sections.Add(newSection);
-            }
-        }
-
-        public void Save(Queue<string> sourceLines)
-        {
-            // Header
-            sourceLines.Enqueue($"Project(\"{{{ParentGuid.ToString().ToUpperInvariant()}}}\") = \"{Name}\", \"{Path}\", \"{{{ProjectGuid.ToString().ToUpperInvariant()}}}\"");
-            // Contents
-            foreach (var section in Sections)
-                section.Save(sourceLines);
-            // Footer
-            sourceLines.Enqueue("EndProject");
+            var match = Regex.Matches(headerLine.Trim(), ProjectHeaderPattern).First();
+            ProjectGuid = Guid.Parse(match.Groups["projectguid"].Value);
+            Name = match.Groups["projectname"].Value;
+            Path = match.Groups["projectpath"].Value;
+            ParentGuid = Guid.Parse(match.Groups["parentguid"].Value);
         }
     }
-
-    class ProjectSection : IFileLoadSave
-    {
-        public string Type { get; set; }
-        public string Location { get; set; }
-        public Dictionary<string, string> AssignmentPairs { get; set; } = new Dictionary<string, string>();
-
-        private const string HeaderPattern = @"ProjectSection\((?<type>\w*)\)(\s*\=\s*)(?<location>\w*)";
-
-        public void Load(Queue<string> sourceLineQueue)
-        {
-            string headerLine = sourceLineQueue.Dequeue().Trim();
-            var headerMatch = Regex.Matches(headerLine, HeaderPattern).First();
-            this.Type = headerMatch.Groups["type"].Value;
-            this.Location = headerMatch.Groups["location"].Value;
-
-            // Load the data.
-            string assignmentLine;
-            while (!"EndProjectSection".Equals(assignmentLine = sourceLineQueue.Dequeue()?.Trim()))
-            {
-                var lineMatch = Regex.Matches(assignmentLine ?? string.Empty, GlobalSection.PairPattern).First();
-                this.AssignmentPairs[lineMatch.Groups["source"].Value] = lineMatch.Groups["target"].Value;
-            }
-        }
-
-        public void Save(Queue<string> sourceLines)
-        {
-            // Header
-            sourceLines.Enqueue($"\tProjectSection({Type}) = {Location}");
-            // Contents
-            foreach (var assignment in AssignmentPairs)
-                sourceLines.Enqueue($"\t\t{assignment.Value} = {assignment.Key}");
-            // Footer
-            sourceLines.Enqueue($"\tEndProjectSection");
-        }
-    }
-
-
+    
     enum SolutionLocation
     {
         preSolution,

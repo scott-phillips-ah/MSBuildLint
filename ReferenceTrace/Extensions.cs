@@ -1,8 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
-using System.Text;
+using System.Xml;
 using System.Xml.Serialization;
 using NuGet.Versioning;
 using ReferenceTrace.MSProject;
@@ -10,10 +10,17 @@ using ReferenceTrace.NuSpec;
 
 namespace ReferenceTrace
 {
-    static class Extensions
+    internal static class Extensions
     {
         public static XmlSerializer ProjectXmlSerializer = new XmlSerializer(typeof(Project));
         public static XmlSerializer PackageXmlSerializer = new XmlSerializer(typeof(Package));
+
+        public static T Deserialize<T>(this XmlSerializer serializer, string filePath)
+        {
+            using var stream = File.OpenRead(filePath);
+            var reader = new XmlTextReader(stream) {Namespaces = false};
+            return (T) serializer.Deserialize(reader);
+        }
 
         public static IEnumerable<T> RemoveNulls<T>(this IEnumerable<T> self) where T : class
         {
