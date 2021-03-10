@@ -8,7 +8,7 @@ namespace ReferenceTrace
     public class BasicCache<K, V> : IDictionary<K, V> where K : class where V : class
     {
         private readonly Dictionary<K, V> _cache = new Dictionary<K, V>();
-        private Func<K, V> _cacheMissLoader;
+        private readonly Func<K, V> _cacheMissLoader;
 
         public BasicCache(Func<K, V> cacheMissLoader)
         {

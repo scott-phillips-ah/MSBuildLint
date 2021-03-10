@@ -28,6 +28,9 @@ namespace ReferenceTrace
         private static BasicCache<string, Project> ProjectCache =
             new BasicCache<string, Project>(x => Extensions.ProjectXmlSerializer.Deserialize<Project>(x));
 
+        private static BasicCache<Project, HashSet<string>> ProjectReferenceCache =
+            new BasicCache<Project, HashSet<string>>(x => GetUnnecessaryReferences(x, new HashSet<string>()));
+
         private static void Main(string[] args)
         {
             Console.WriteLine("Parsing command line...");
@@ -36,25 +39,28 @@ namespace ReferenceTrace
             var config = builder.Build();
 
             _nugetCachePaths = config["nugetcache"].Split(';').ToList();
-            ;
 
             var solution = ParseSolutionFile(config["solutionfile"]);
 
-            var removePackages = new Dictionary<Project, HashSet<string>>();
+            var removePackages = new Dictionary<string, HashSet<string>>();
 
             using (var pbar = new ProgressBar(solution.Projects.Count, "Parsing project files", DefaultOptions))
             {
                 foreach (var project in solution.Projects)
                 {
                     pbar.Tick();
-                    removePackages[project] = GetUnnecessaryReferences(project, new HashSet<string>());
+                    removePackages[project.FilePath] = GetUnnecessaryReferences(project, new HashSet<string>());
                 }
             }
 
             // Print results
-            foreach (var (project, packages) in removePackages)
-            foreach (var removePackage in packages)
-                Console.WriteLine($"Duplicate package {removePackage} can be removed from {project.FilePath}");
+            Console.WriteLine($"Project: Package");
+            foreach (var (project, packages) in removePackages.Where(x => x.Value.Count > 0))
+            {
+                Console.WriteLine($"{project}:");
+                foreach (var removePackage in packages)
+                    Console.WriteLine($"     {removePackage}");
+            }
         }
 
         private static HashSet<string> GetUnnecessaryReferences(Project project, HashSet<string> allReferencedPackages)
@@ -63,14 +69,17 @@ namespace ReferenceTrace
             var packageReferences = project.ItemGroup.SelectMany(x => x.PackageReference).ToList();
 
             // Get project references - investigate those
-            foreach (var newProjectPath in projectReferences.Select(referencedProject => Path.Combine(
+            foreach (var newProjectPath in projectReferences.Select(referencedProject => Path.GetFullPath(Path.Combine(
                 Path.GetDirectoryName(project.FilePath) ?? string.Empty,
-                referencedProject.Include)))
+                referencedProject.Include))))
             {
                 var newProject = ProjectCache[newProjectPath];
                 newProject.FilePath = newProjectPath;
 
-                GetUnnecessaryReferences(newProject, allReferencedPackages);
+                allReferencedPackages.Add(newProjectPath);
+
+                var subProjectReferences = ProjectReferenceCache[newProject];
+                allReferencedPackages.AddRange(subProjectReferences);
             }
 
             // Get nuget reference - investigate those
@@ -94,7 +103,7 @@ namespace ReferenceTrace
                     ?.ToList() ?? new List<PackageReference>();
                 allReferencedPackages.AddRange(dependencies.Select(x => x.NugetName));
                 // Recursive check.
-                // AddNugetDependencies(dependencies, allReferencedPackages);
+                AddNugetDependencies(dependencies, allReferencedPackages);
             }
         }
 
