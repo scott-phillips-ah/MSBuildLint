@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Xml;
-using LazyCache;
 using Microsoft.Extensions.Configuration;
 using ReferenceTrace.MSProject;
 using ReferenceTrace.NuSpec;
@@ -13,19 +11,22 @@ namespace ReferenceTrace
 {
     internal class Program
     {
-        private ProgressBarOptions DefaultOptions => new ProgressBarOptions
+        private static ProgressBarOptions DefaultOptions => new ProgressBarOptions
         {
             ForegroundColor = ConsoleColor.Yellow,
             ForegroundColorDone = ConsoleColor.DarkGreen,
             BackgroundColor = ConsoleColor.DarkGray,
-            BackgroundCharacter = '\u2593'
+            BackgroundCharacter = '\u2593',
+            DisplayTimeInRealTime = false
         };
 
-        private static CachingService NugetCache = new CachingService();
-        private static HashSet<string> MissingPackages = new HashSet<string>();
+        private static List<string> _nugetCachePaths;
 
-        private static string _nugetCacheLocation;
-        private static IEnumerable<string> NugetCachePaths => _nugetCacheLocation.Split(';');
+        private static BasicCache<PackageReference, Package> PackageCache =
+            new BasicCache<PackageReference, Package>(LoadPackageFromNugetCache);
+
+        private static BasicCache<string, Project> ProjectCache =
+            new BasicCache<string, Project>(x => Extensions.ProjectXmlSerializer.Deserialize<Project>(x));
 
         private static void Main(string[] args)
         {
@@ -34,13 +35,14 @@ namespace ReferenceTrace
             builder.AddCommandLine(args);
             var config = builder.Build();
 
-            _nugetCacheLocation = config["nugetcache"];
+            _nugetCachePaths = config["nugetcache"].Split(';').ToList();
+            ;
 
             var solution = ParseSolutionFile(config["solutionfile"]);
-            
+
             var removePackages = new Dictionary<Project, HashSet<string>>();
 
-            using (var pbar = new ProgressBar(solution.Projects.Count, "Parsing project files"))
+            using (var pbar = new ProgressBar(solution.Projects.Count, "Parsing project files", DefaultOptions))
             {
                 foreach (var project in solution.Projects)
                 {
@@ -65,7 +67,7 @@ namespace ReferenceTrace
                 Path.GetDirectoryName(project.FilePath) ?? string.Empty,
                 referencedProject.Include)))
             {
-                var newProject = Extensions.ProjectXmlSerializer.Deserialize<Project>(newProjectPath);
+                var newProject = ProjectCache[newProjectPath];
                 newProject.FilePath = newProjectPath;
 
                 GetUnnecessaryReferences(newProject, allReferencedPackages);
@@ -74,43 +76,43 @@ namespace ReferenceTrace
             // Get nuget reference - investigate those
             AddNugetDependencies(packageReferences, allReferencedPackages);
 
-            return packageReferences.Select(x => x.Include.ToLowerInvariant()).Intersect(allReferencedPackages)
+            return packageReferences.Select(x => x.NugetName).Intersect(allReferencedPackages)
                 .ToHashSet();
         }
-        
+
         private static void AddNugetDependencies(IEnumerable<PackageReference> packageReferences,
             HashSet<string> allReferencedPackages)
         {
             foreach (var nugetReference in packageReferences)
             {
-                // Deserialize the nuspec file
-                var nugetName = nugetReference.Include.ToLowerInvariant();
-                var nuspecPaths = NugetCachePaths.Select(x => Path.Combine(x, nugetName)).ToList();
-                if (nuspecPaths.Any(MissingPackages.Contains)) continue;
-                // Find a local directory which matches
-                var nugetRange = nugetReference.Version.ToVersionRange();
-                try
-                {
-                    var matchDir = nuspecPaths.SelectMany(path => new DirectoryInfo(path).GetDirectories())
-                        .FirstOrDefault(x =>
-                            nugetRange.Satisfies(x.Name.ToNugetVersion()));
-                    var nuspecFile = Path.Combine(matchDir?.FullName ?? throw new IOException(), $"{nugetName}.nuspec");
+                var nuspecObject = PackageCache[nugetReference];
+                if (nuspecObject == null) continue;
 
-                    var nuspecObject = Extensions.PackageXmlSerializer.Deserialize<Package>(nuspecFile);
-
-                    var dependencies = nuspecObject.Metadata?.Dependencies?.Group?.Select(x => x.Dependency)
-                        ?.RemoveNulls()
-                        ?.Select(x => new PackageReference {Include = x.Id, Version = x.Version} )
-                        ?.ToList() ?? new List<PackageReference>();
-                    allReferencedPackages.AddRange(dependencies.Select(x => x.Include.ToLowerInvariant()));
-                    // Recursive check.
-                    AddNugetDependencies(dependencies, allReferencedPackages);
-                }
-                catch (IOException)
-                {
-                    MissingPackages.Add(nugetName);
-                }
+                var dependencies = nuspecObject.Metadata?.Dependencies?.Group?.Select(x => x.Dependency)
+                    ?.RemoveNulls()
+                    ?.Select(x => new PackageReference {Include = x.Id, Version = x.Version})
+                    ?.ToList() ?? new List<PackageReference>();
+                allReferencedPackages.AddRange(dependencies.Select(x => x.NugetName));
+                // Recursive check.
+                // AddNugetDependencies(dependencies, allReferencedPackages);
             }
+        }
+
+        private static Package LoadPackageFromNugetCache(PackageReference nugetReference)
+        {
+            // Find a local directory which matches
+            var nuspecPaths = _nugetCachePaths.Select(x => Path.Combine(x, nugetReference.NugetName)).ToList();
+            var nugetRange = nugetReference.Version.ToVersionRange();
+            var matchDir = nuspecPaths.SelectMany(path =>
+                    Directory.Exists(path) ? new DirectoryInfo(path).GetDirectories() : new DirectoryInfo[0])
+                .FirstOrDefault(x =>
+                    nugetRange.Satisfies(x.Name.ToNugetVersion()));
+            if (matchDir?.FullName == null)
+                return null;
+            var nuspecFile = Path.Combine(matchDir?.FullName, $"{nugetReference.NugetName}.nuspec");
+
+            var nuspecObject = Extensions.PackageXmlSerializer.Deserialize<Package>(nuspecFile);
+            return nuspecObject;
         }
 
         private static SolutionFile ParseSolutionFile(string solutionPath) => new SolutionFile(solutionPath);

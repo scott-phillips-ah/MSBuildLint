@@ -2,7 +2,7 @@
   "profiles": {
     "ReferenceTrace": {
       "commandName": "Project",
-      "commandLineArgs": "--solutionfile \"C:\\work\\moneyMovement\\src\\MoneyMovement.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
+      "commandLineArgs": "--solutionfile \"C:\\work\\services\\Application\\ActiveHours.All.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
     }
   }
 }

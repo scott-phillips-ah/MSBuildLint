@@ -103,11 +103,28 @@ namespace ReferenceTrace.MSProject
 		[XmlAttribute(AttributeName = "Include")]
 		public string Include { get; set; }
 		[XmlAttribute(AttributeName = "Version")]
-		public string Version { get; set; }
+		public string Version_Attrib { get; set; }
+		[XmlElement("Version", IsNullable = true)]
+		public string Version_Elem { get; set; }
 		[XmlElement(ElementName = "PrivateAssets")]
 		public string PrivateAssets { get; set; }
         [XmlElement(ElementName = "IncludeAssets")]
         public string IncludeAssets { get; set; }
+        
+        [XmlIgnore]
+        public string Version
+        {
+	        get => Version_Elem ?? Version_Attrib;
+	        set
+	        {
+		        if (Version_Elem != null) Version_Elem = value;
+		        else Version_Attrib = value;
+
+	        }
+        }
+        
+        [XmlIgnore]
+        public string NugetName => Include.ToLowerInvariant();
 	}
 
 	[XmlRoot(ElementName = "Project")]

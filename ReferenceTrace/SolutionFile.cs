@@ -109,8 +109,7 @@ namespace ReferenceTrace
                 Platform = match.Groups["platform"].Value,
                 Suffix = match.Groups["suffix"].Value
             };
-            var tmpGuid = Guid.Empty;
-            Guid.TryParse(match.Groups["guid"].Value, out tmpGuid);
+            Guid.TryParse(match.Groups["guid"].Value, out var tmpGuid);
             platform.ProjectGuid = tmpGuid;
             return platform;
         }
