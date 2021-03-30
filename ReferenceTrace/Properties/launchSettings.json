@@ -1,12 +1,16 @@
 {
   "profiles": {
-    "ReferenceTrace": {
+    "Reference Trace": {
       "commandName": "Project",
       "commandLineArgs": "cleanreferences --solutionfile \"C:\\work\\svc-earnings\\src\\Earnin.Earnings.Web.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
     },
-    "ProjectFormat": {
+    "Project Format": {
       "commandName": "Project",
       "commandLineArgs": "projectformat --solutionfile \"C:\\work\\MSBuildLint\\ReferenceTrace.sln\""
+    },
+    "Parallel Test": {
+      "commandName": "Project",
+      "commandLineArgs": "paralleltest --solutionfile \"C:\\work\\MSBuildLint\\ReferenceTrace.sln\" --testruns \"1\" --reportfile \".\\parallel_report.xml\""
     }
   }
 }

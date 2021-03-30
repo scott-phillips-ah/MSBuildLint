@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Xml.Linq;
 using CommandLine;
@@ -35,6 +37,8 @@ namespace ReferenceTrace
         {
             [Option(Default = 20, HelpText = "Number of runs to perform")]
             public int TestRuns { get; set; }
+            [Option(Required = true, HelpText = "Report file to generate")]
+            public string ReportFile { get; set; }
         }
         
         [Verb("projectformat", HelpText = "Format project files")]
@@ -52,7 +56,7 @@ namespace ReferenceTrace
                     errs => -1);
         }
 
-        private static int FormatProjectFiles(ProjectFormatOptions options)
+        private static int FormatProjectFiles(BaseOptions options)
         {
             var slnFile = new SolutionFile(options.SolutionFile);
 
@@ -72,6 +76,7 @@ namespace ReferenceTrace
                     foreach (var reference in packageReferences)
                         itemGroup.Add(reference);
 
+                    // TODO - Allow for other save formats
                     xmlFile.Save(project.FilePath);
                 }
             }
@@ -81,6 +86,30 @@ namespace ReferenceTrace
 
         private static int TestParallelDependency(ParallelTestOptions options)
         {
+            var testResultPath = Path.GetFullPath(Path.Join(Path.GetDirectoryName(options.SolutionFile)!, "TestResults"));
+            // Load the solution file
+            // Execute `dotnet test` as many times are necessary
+            for (var runNumber = 0; runNumber < options.TestRuns; runNumber++)
+            {
+                var processResult = Process.Start("dotnet",
+                    $"test {options.SolutionFile} --no-build --logger trx --results-directory {testResultPath}");
+                processResult?.WaitForExit();
+            }
+            // Read all the .trx file results
+            var trxFiles = Directory.GetFiles(testResultPath, "*.trx");
+            var trxData = trxFiles.Select(x => TrxTools.TrxParser.TrxControl.ReadTrx(new StreamReader(x)));
+
+            // Parse the TRX data for all the failed runs
+            var failedRuns = trxData.Where(tr => tr.ResultSummary.Outcome.Equals("failed"));
+            var failedTests = failedRuns.SelectMany(tr => tr.Results.Where(
+                utr => utr.Outcome.Equals("failed"))).GroupBy(
+                x => x.TestName).Select(y => y.First());
+
+            foreach (var testResult in failedTests)
+            {
+                Console.WriteLine($"{testResult.TestName}: {testResult.Outcome}");
+            }
+            // Report back
             return 0;
         }
 

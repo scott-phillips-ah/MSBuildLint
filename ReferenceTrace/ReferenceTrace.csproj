@@ -9,5 +9,6 @@
     <PackageReference Include="CommandLineParser" Version="2.8.0" />
     <PackageReference Include="NuGet.Versioning" Version="5.6.0" />
     <PackageReference Include="ShellProgressBar" Version="5.0.0" />
+    <PackageReference Include="trxparser" Version="0.5.0" />
   </ItemGroup>
 </Project>
