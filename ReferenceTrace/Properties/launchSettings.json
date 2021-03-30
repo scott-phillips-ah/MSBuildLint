@@ -2,7 +2,11 @@
   "profiles": {
     "ReferenceTrace": {
       "commandName": "Project",
-      "commandLineArgs": "--solutionfile \"C:\\work\\svc-earnings\\src\\Earnin.Earnings.Web.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
+      "commandLineArgs": "cleanreferences --solutionfile \"C:\\work\\svc-earnings\\src\\Earnin.Earnings.Web.sln\" --nugetcache \"C:\\Users\\scott\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
+    },
+    "ProjectFormat": {
+      "commandName": "Project",
+      "commandLineArgs": "projectformat --solutionfile \"C:\\work\\MSBuildLint\\ReferenceTrace.sln\""
     }
   }
 }

@@ -15,7 +15,7 @@ namespace ReferenceTrace
 
         public List<Project> Projects { get; }
 
-        private List<string> Lines => File.ReadAllLines(SolutionPath).ToList();
+        private IEnumerable<string> Lines => File.ReadAllLines(SolutionPath).ToList();
 
         public SolutionFile(string path)
         {
