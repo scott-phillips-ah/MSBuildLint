@@ -1,7 +1,7 @@
 # MSBuildLint
 Clean up the MSBuild project files in various ways:
 
-1. `cleanreferences --solutionfile \"[full path to .sln file]\" --nugetcache \"C:\\Users\\[username]\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""
+1. `cleanreferences --solutionfile \"[full path to .sln file]\" --nugetcache \"C:\\Users\\[username]\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""`
 2. `projectformat --solutionfile "[full path to .sln file]"`
 3. `paralleltest --solutionfile "C:\work\MSBuildLint\ReferenceTrace.sln" --TestRuns "15" --ReportFile ".\parallel_report.xml"`
 
