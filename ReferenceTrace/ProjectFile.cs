@@ -5,6 +5,7 @@
  */
 
 using System.Collections.Generic;
+using System.IO;
 using System.Xml.Serialization;
 
 namespace ReferenceTrace.MSProject
@@ -150,6 +151,10 @@ namespace ReferenceTrace.MSProject
 	{
 		[XmlAttribute(AttributeName = "Include")]
 		public string Include { get; set; }
+
+		public string IncludeFullPath(Project self) => IncludeFullPath(Path.GetDirectoryName(self.FilePath));
+		public string IncludeFullPath(string referenceRootDirectory) =>
+			Path.GetFullPath(Path.Combine(referenceRootDirectory, Include));
 	}
 
 	[XmlRoot(ElementName = "PropertyGroup")]

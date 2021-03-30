@@ -39,8 +39,16 @@ namespace ReferenceTrace
                 yield return (t1, t2);
         }
 
+        public static IEnumerable<PackageReference> GetPackageReferences(this Package self)
+        {
+            return self.Metadata?.Dependencies?.Group?.Select(x => x.Dependency)
+                ?.RemoveNulls()
+                ?.Select(x => new PackageReference {Include = x.Id, Version = x.Version})
+                ?.ToList() ?? new List<PackageReference>();
+        }
 
-        public static void AddRange<T>(this HashSet<T> self, IEnumerable<T> other)
+
+        public static void AddRange<T>(this ISet<T> self, IEnumerable<T> other)
         {
             foreach (var element in other)
                 self.Add(element);
@@ -48,9 +56,7 @@ namespace ReferenceTrace
 
         public static NuGetVersion ToNugetVersion(this string self)
         {
-            if (NuGetVersion.TryParse(self, out var version)) return version;
-            
-            return new NuGetVersion(0,0,0);
+            return NuGetVersion.TryParse(self, out var version) ? version : new NuGetVersion(0,0,0);
         }
 
         public static VersionRange ToVersionRange(this string self)

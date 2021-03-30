@@ -1,17 +1,13 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using Microsoft.Extensions.Configuration;
-using ReferenceTrace.MSProject;
-using ReferenceTrace.NuSpec;
+using CommandLine;
 using ShellProgressBar;
 
 namespace ReferenceTrace
 {
     internal class Program
     {
-        private static ProgressBarOptions DefaultOptions => new ProgressBarOptions
+        public static ProgressBarOptions DefaultProgressBarOptions => new ProgressBarOptions
         {
             ForegroundColor = ConsoleColor.Yellow,
             ForegroundColorDone = ConsoleColor.DarkGreen,
@@ -20,110 +16,32 @@ namespace ReferenceTrace
             DisplayTimeInRealTime = false
         };
 
-        private static List<string> _nugetCachePaths;
-
-        private static BasicCache<PackageReference, Package> PackageCache =
-            new BasicCache<PackageReference, Package>(LoadPackageFromNugetCache);
-
-        private static BasicCache<string, Project> ProjectCache =
-            new BasicCache<string, Project>(x => Extensions.ProjectXmlSerializer.Deserialize<Project>(x));
-
-        private static BasicCache<Project, HashSet<string>> ProjectReferenceCache =
-            new BasicCache<Project, HashSet<string>>(x => GetUnnecessaryReferences(x, new HashSet<string>()));
-
-        private static void Main(string[] args)
+        [Verb("clean")]
+        public class CleanReferencesOptions
         {
-            Console.WriteLine("Parsing command line...");
-            var builder = new ConfigurationBuilder();
-            builder.AddCommandLine(args);
-            var config = builder.Build();
-
-            _nugetCachePaths = config["nugetcache"].Split(';').ToList();
-
-            var solution = ParseSolutionFile(config["solutionfile"]);
-
-            var removePackages = new Dictionary<string, HashSet<string>>();
-
-            using (var pbar = new ProgressBar(solution.Projects.Count, "Parsing project files", DefaultOptions))
-            {
-                foreach (var project in solution.Projects)
-                {
-                    pbar.Tick();
-                    removePackages[project.FilePath] = GetUnnecessaryReferences(project, new HashSet<string>());
-                }
-            }
-
-            // Print results
-            Console.WriteLine($"Project: Package");
-            foreach (var (project, packages) in removePackages.Where(x => x.Value.Count > 0))
-            {
-                Console.WriteLine($"{project}:");
-                foreach (var removePackage in packages)
-                    Console.WriteLine($"     {removePackage}");
-            }
+            [Option(Default=false, HelpText = "Solution file to parse")]
+            public string SolutionFile { get; set; }
+            
+            [Option(Default=false, HelpText = "Nuget cache locations")]
+            public string NugetCache { get; set; }
         }
 
-        private static HashSet<string> GetUnnecessaryReferences(Project project, HashSet<string> allReferencedPackages)
+        private static int Main(string[] args)
         {
-            var projectReferences = project.ItemGroup.SelectMany(x => x.ProjectReference).ToList();
-            var packageReferences = project.ItemGroup.SelectMany(x => x.PackageReference).ToList();
-
-            // Get project references - investigate those
-            foreach (var newProjectPath in projectReferences.Select(referencedProject => Path.GetFullPath(Path.Combine(
-                Path.GetDirectoryName(project.FilePath) ?? string.Empty,
-                referencedProject.Include))))
-            {
-                var newProject = ProjectCache[newProjectPath];
-                newProject.FilePath = newProjectPath;
-
-                allReferencedPackages.Add(newProjectPath);
-
-                var subProjectReferences = ProjectReferenceCache[newProject];
-                allReferencedPackages.AddRange(subProjectReferences);
-            }
-
-            // Get nuget reference - investigate those
-            AddNugetDependencies(packageReferences, allReferencedPackages);
-
-            return packageReferences.Select(x => x.NugetName).Intersect(allReferencedPackages)
-                .ToHashSet();
+            return Parser.Default.ParseArguments<CleanReferencesOptions>(args)
+                .MapResult(CleanReferences, errs => -1);
         }
-
-        private static void AddNugetDependencies(IEnumerable<PackageReference> packageReferences,
-            HashSet<string> allReferencedPackages)
+        private static int CleanReferences(CleanReferencesOptions options)
         {
-            foreach (var nugetReference in packageReferences)
-            {
-                var nuspecObject = PackageCache[nugetReference];
-                if (nuspecObject == null) continue;
+        Console.WriteLine("Parsing command line...");
 
-                var dependencies = nuspecObject.Metadata?.Dependencies?.Group?.Select(x => x.Dependency)
-                    ?.RemoveNulls()
-                    ?.Select(x => new PackageReference {Include = x.Id, Version = x.Version})
-                    ?.ToList() ?? new List<PackageReference>();
-                allReferencedPackages.AddRange(dependencies.Select(x => x.NugetName));
-                // Recursive check.
-                AddNugetDependencies(dependencies, allReferencedPackages);
-            }
+            var nugetCachePaths = options.NugetCache.Split(';').ToList();
+            var solutionFilePath = options.SolutionFile;
+
+            var tracer = new ReferenceTracer(nugetCachePaths, solutionFilePath);
+            tracer.FindUnnecessaryReferences();
+
+            return 0;
         }
-
-        private static Package LoadPackageFromNugetCache(PackageReference nugetReference)
-        {
-            // Find a local directory which matches
-            var nuspecPaths = _nugetCachePaths.Select(x => Path.Combine(x, nugetReference.NugetName)).ToList();
-            var nugetRange = nugetReference.Version.ToVersionRange();
-            var matchDir = nuspecPaths.SelectMany(path =>
-                    Directory.Exists(path) ? new DirectoryInfo(path).GetDirectories() : new DirectoryInfo[0])
-                .FirstOrDefault(x =>
-                    nugetRange.Satisfies(x.Name.ToNugetVersion()));
-            if (matchDir?.FullName == null)
-                return null;
-            var nuspecFile = Path.Combine(matchDir?.FullName, $"{nugetReference.NugetName}.nuspec");
-
-            var nuspecObject = Extensions.PackageXmlSerializer.Deserialize<Package>(nuspecFile);
-            return nuspecObject;
-        }
-
-        private static SolutionFile ParseSolutionFile(string solutionPath) => new SolutionFile(solutionPath);
     }
 }

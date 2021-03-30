@@ -11,28 +11,22 @@ namespace ReferenceTrace
     {
         private string SolutionPath { get; set; }
 
-        private readonly Lazy<List<SolutionProject>> _solutionProjects;
-        private IEnumerable<SolutionProject> SolutionProjects => _solutionProjects.Value;
+        private List<SolutionProject> SolutionProjects { get; }
 
-        private readonly Lazy<List<Project>> _projects;
-        public List<Project> Projects => _projects.Value;
+        public List<Project> Projects { get; }
 
-        private Lazy<List<string>> Lines => new Lazy<List<string>>(() => File.ReadAllLines(SolutionPath).ToList());
-        
-        public SolutionFile()
-        {
-            _solutionProjects = new Lazy<List<SolutionProject>>(() => LoadSolutionProjects().ToList());
-            _projects = new Lazy<List<Project>>(() => LoadProjects().ToList());
-        }
+        private List<string> Lines => File.ReadAllLines(SolutionPath).ToList();
 
-        public SolutionFile(string path) : this()
+        public SolutionFile(string path)
         {
             SolutionPath = path;
+            SolutionProjects = LoadSolutionProjects().ToList();
+            Projects = LoadProjects().ToList();
         }
 
         private IEnumerable<SolutionProject> LoadSolutionProjects()
         {
-            return Lines.Value.Where(line => line.StartsWith("Project")).Select(line => new SolutionProject(line));
+            return Lines.Where(line => line.StartsWith("Project")).Select(line => new SolutionProject(line));
         }
         private IEnumerable<Project> LoadProjects()
         {
@@ -131,7 +125,7 @@ namespace ReferenceTrace
         public Guid ParentGuid { get; set; } = Guid.Empty;
 
         private const string ProjectHeaderPattern =
-            @"Project\(\""{(?<parentguid>[A-F0-9\-]+)}\""\)\s*=\s*\""(?<projectname>\S+)\""\s*,\s*\""(?<projectpath>\S+)\""\s*,\s*\""(?<projectguid>{[A-F0-9\-]+})\""";
+            @"Project\(\""{(?<parentguid>[A-F0-9\-]+)}\""\)\s*=\s*\""(?<projectname>[\w\s\.]+)\""\s*,\s*\""(?<projectpath>[\w\s\.\\]+)\""\s*,\s*\""(?<projectguid>{[A-F0-9\-]+})\""";
 
         public SolutionProject(string headerLine) { Load(headerLine);}
 
