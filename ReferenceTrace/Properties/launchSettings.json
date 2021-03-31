@@ -10,7 +10,7 @@
     },
     "Parallel Test": {
       "commandName": "Project",
-      "commandLineArgs": "paralleltest --solutionfile \"C:\\work\\MSBuildLint\\ReferenceTrace.sln\" --testruns \"1\" --reportfile \".\\parallel_report.xml\""
+      "commandLineArgs": "paralleltest --solutionfile \"C:\\work\\svc-earnings\\src\\Earnin.Earnings.Web.sln\" --testruns \"1\" --reportfile \".\\parallel_report.xml\""
     }
   }
 }

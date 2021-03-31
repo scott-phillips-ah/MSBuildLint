@@ -86,24 +86,31 @@ namespace ReferenceTrace
 
         private static int TestParallelDependency(ParallelTestOptions options)
         {
-            var testResultPath = Path.GetFullPath(Path.Join(Path.GetDirectoryName(options.SolutionFile)!, "TestResults"));
+            var solutionDirectory = Path.GetDirectoryName(options.SolutionFile);
+            var testResultPath = Path.GetFullPath(Path.Join(solutionDirectory, "TestResults"));
+            // TODO - Clear the results path?
             // Load the solution file
             // Execute `dotnet test` as many times are necessary
             for (var runNumber = 0; runNumber < options.TestRuns; runNumber++)
             {
-                var processResult = Process.Start("dotnet",
-                    $"test {options.SolutionFile} --no-build --logger trx --results-directory {testResultPath}");
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"test \"{options.SolutionFile}\" --no-build --logger trx --results-directory \"{testResultPath}\"",
+                    WorkingDirectory = solutionDirectory ?? string.Empty,
+                };
+                var processResult = Process.Start(processStartInfo);
                 processResult?.WaitForExit();
             }
             // Read all the .trx file results
             var trxFiles = Directory.GetFiles(testResultPath, "*.trx");
-            var trxData = trxFiles.Select(x => TrxTools.TrxParser.TrxControl.ReadTrx(new StreamReader(x)));
+            var trxData = trxFiles.Select(x => TrxTools.TrxParser.TrxControl.ReadTrx(new StreamReader(x))).ToList();
 
             // Parse the TRX data for all the failed runs
-            var failedRuns = trxData.Where(tr => tr.ResultSummary.Outcome.Equals("failed"));
+            var failedRuns = trxData.Where(tr => tr.ResultSummary.Outcome.ToLowerInvariant().Equals("failed"));
             var failedTests = failedRuns.SelectMany(tr => tr.Results.Where(
-                utr => utr.Outcome.Equals("failed"))).GroupBy(
-                x => x.TestName).Select(y => y.First());
+                utr => utr.Outcome.ToLowerInvariant().Equals("failed"))).GroupBy(
+                x => x.TestName).Select(y => y.First()).OrderBy(x => x.TestName);
 
             foreach (var testResult in failedTests)
             {
