@@ -3,7 +3,7 @@ Clean up the MSBuild project files in various ways:
 
 1. `cleanreferences --solutionfile \"[full path to .sln file]\" --nugetcache \"C:\\Users\\[username]\\.nuget\\packages;C:\\Program Files\\dotnet\\packs\""`
 2. `projectformat --solutionfile "[full path to .sln file]"`
-3. `paralleltest --solutionfile "C:\work\MSBuildLint\ReferenceTrace.sln" --TestRuns "15" --ReportFile ".\parallel_report.xml"`
+3. `paralleltest --solutionfile "C:\work\MSBuildLint\ReferenceTrace.sln" --testruns "15" --reportfile ".\parallel_report.xml"`
 
 ## Clean References
 Provides a list of references, sorted by project, which can be removed as duplicates. Please note that some package references (such as `<PackageReference Include="Microsoft.Net.Test.Sdk" Version="16.9.1" />`) need to be included in **every** (test) project. Don't remove these references, or unit testing will fail.
